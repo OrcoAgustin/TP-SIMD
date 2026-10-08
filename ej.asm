@@ -200,70 +200,68 @@ global ej3_remove_duplicates
 ; signal: Está en rsi
 ; output: Está en rdx
 ej3_remove_duplicates:
-push rbp
-mov rbp, rsp
-push r12 ;contador
-push r13
-push r14
-push r15
-push rbx
+    push rbp
+    mov rbp, rsp
+    push r12 
+    push r13
+    push r14
+    push r15
+    push rbx
 
-xor r12, r12
+    xor r12, r12          ; r12 = índice de lectura (avanza de 16 en 16)
+    xor r15, r15          ; r15 = índice de escritura en output (arranca en 0)
 
-mov al, ' '
-mov r14b, al ; r14b = señal de referencia
-xor r15, r15
-
+    mov r14b, ' '         ; r14b = señal de referencia (arranca en espacio)
 
 .loop:
-	cmp r12, rdi
-	jge .end
-	
-	movdqu xmm0, [rsi + r12]
-	movd eax, xmm0
+    cmp r12, rdi
+    jge .end
+    
+    ; Cargar 16 bytes y salvar INMEDIATAMENTE el primer byte en r13b
+    movdqu xmm0, [rsi + r12]
+    movd eax, xmm0 ; EAX tiene los primeros 4 bytes, AL tiene el 1ro
+    mov r13b, al ; Guardamos de forma segura el carácter del bloque
 
-	pxor xmm1, xmm1
-	movd xmm1, eax
+    ;Preparar xmm1 para la expansión matemática
+    pxor xmm1, xmm1
+    movd xmm1, eax
 
-	;matematica!!!!!
-	punpcklbw xmm1, xmm1 ; Duplica de 1 a 2 bytes  (2 bytes repetidos)
-	punpcklwd xmm1, xmm1 ; Duplica de 2 a 4 bytes  (4 bytes repetidos)
-	punpckldq xmm1, xmm1 ; Duplica de 4 a 8 bytes  (8 bytes repetidos)
-	punpcklqdq xmm1, xmm1 ; Duplica de 8 a 16 bytes (¡16 bytes repetidos!)
-	;xmm1 esta lleno de copias del 1er byte
+    ; Matemática de expansión a 16 bytes
+    punpcklbw xmm1, xmm1 
+    punpcklwd xmm1, xmm1 
+    punpckldq xmm1, xmm1 
+    punpcklqdq xmm1, xmm1 
 
-	pcmpeqb xmm0, xmm1
-	
-	pmovmskb edx, xmm0    
-    cmp edx, 0xFFFF       
-    jne .siguiente_bloque
+    ; Comparar bloque real con copias
+    pcmpeqb xmm0, xmm1
+    
+    pmovmskb eax, xmm0     
+    cmp eax, 0xFFFF        
+    jne .siguiente_bloque ; Si no es homogéneo, se descarta
 
-	mov r13b, al
+    ; Aplicar reglas de referencia usando r13b
+    cmp r13b, r14b
+    je .siguiente_bloque ; Si es igual al anterior, se descarta (duplicado)
+    
+    mov r14b, r13b  ; Nueva referencia
+    
+    cmp r14b, ' '
+    je .siguiente_bloque  ;Si es espacio (silencio), se descarta
 
-	cmp r13b, r14b
-    je .siguiente_bloque
-	
-	mov r14b, r13b
-	
-	cmp r14b, ' '
-    je .siguiente_bloque
-
-	; Se guarda en el output
+    ;Guardar en el output de forma segura y avanzar r15 de a 1
     mov [rdx + r15], r14b
-    inc r15
+    inc r15            
 
 .siguiente_bloque:
-    add r12, 16           
+    add r12, 16            
     jmp .loop
 
 .end:
-	mov byte [rdx + r15], 0 ;
-
+    pop rbx
     pop r15
     pop r14
     pop r13
     pop r12
-    pop rbx
     pop rbp
     ret
 
