@@ -257,6 +257,8 @@ ej3_remove_duplicates:
     jmp .loop
 
 .end:
+    mov byte [rdx + r15], 0 
+
     pop rbx
     pop r15
     pop r14
