@@ -68,25 +68,26 @@ ej1_sample:
     push r14
     push r15
 
-    ; Recuperar argumentos de la pila
+    ;Recuperar de pila
     mov r10, [rbp + 16] ; freq_b
     mov r11, [rbp + 24] ; b_start
 
-    ; Preservar longitudes en registros seguros para no pisarlos con la división
+    ; Guardar datos 
     mov r13, rdx ; r13 = freq_a_len
     mov r14, r9 ; r14 = freq_b_len
 
-    xor r12, r12 ; r12 = i (contador / índice actual del buffer)
+    xor r12, r12 ; contador / i del buffer
 
 .loop:
     cmp r12, rdi
     jge .end
 
-    ; Calcular índice circular para A: rax = (i + a_start) % freq_a_len
+    ; Calcular índice A: rax = (i + a_start) % freq_a_len
+    ;ES CIRCULAR
     mov rax, r12
     add rax, r8 ; rax = i + a_start
     xor rdx, rdx ; Limpiar rdx para la división de 128-bit (rdx:rax)
-    div r13 ; rdx:rax / freq_a_len -> el resto (módulo) queda en rdx
+    div r13
     mov rbx, rdx ; rbx = índice final para freq_a
 
     
@@ -94,21 +95,21 @@ ej1_sample:
     mov rax, r12
     add rax, r11 ; rax = i + b_start
     xor rdx, rdx ; Limpiar rdx
-    div r14 ; rdx:rax / freq_b_len -> el resto queda en rdx
+    div r14 
     ; rdx ya tiene el índice final para freq_b
 
     
     ; Carga 8 elementos de int16_t 
-    lea rax, [rcx + rbx * 2] ; Dirección base + índice * 2 bytes
+    lea rax, [rcx + rbx * 2]
     movdqu xmm0, [rax] ; Carga 8 valores de freq_a en xmm0
 
-    lea rax, [r10 + rdx * 2] ; Dirección base + índice * 2 bytes
+    lea rax, [r10 + rdx * 2]
     movdqu xmm1, [rax] ; Carga 8 valores de freq_b en xmm1
 
     
     ; Operaciones SIMD
     paddsw xmm0, xmm1 ; Suma con signo de 16 bits en paralelo (8 elementos)
-    psraw  xmm0, 1 ; Dividir por 2 (shift a derecha, mantiene signo)
+    psraw  xmm0, 1 ; Dividir por 2 (sh rig)
 
     
     ;Guardar resultado en el buffer de salida
@@ -223,7 +224,7 @@ ej3_remove_duplicates:
     cmp r12, rdi
     jge .end
     
-    ; Cargar 16 bytes y salvar el primer byte en r13b
+    ; Cargar 16 bytes y guardar el primer byte en r13b
     movdqu xmm0, [rsi + r12]
     movd eax, xmm0 ; EAX tiene los primeros 4 bytes, AL tiene el 1ro
     mov r13b, al ; Guardamos de forma segura el carácter del bloque
@@ -244,7 +245,7 @@ ej3_remove_duplicates:
     cmp eax, 0xFFFF        
     jne .siguiente_bloque ; Si no es homogéneo, se descarta
 
-    ; Aplicar reglas de referencia usando r13b
+    ;checks a e13b
     cmp r13b, r14b
     je .siguiente_bloque ; Si es igual al anterior, se descarta (duplicado)
     
@@ -253,7 +254,7 @@ ej3_remove_duplicates:
     cmp r14b, ' '
     je .siguiente_bloque  ;Si es espacio (silencio), se descarta
 
-    ;Guardar en el output y avanzar r15 de a 1
+    ;Guardar en el output
     mov [rdx + r15], r14b
     inc r15            
 
@@ -285,14 +286,14 @@ ej4_get_numbers:
     push r15
     push rbx
 
-    xor rcx, rcx ; rcx = i (número actual: 0 .. size - 1)
-    xor r8, r8 ; r8 = offset de lectura en bytes (avanza de a 10)
+    xor rcx, rcx ;contador 
+    xor r8, r8 ; r8 es offset de lectura en bytes (avanza de a 10)
 
 .loop:
     cmp rcx, rdi
     jge .end
 
-    ; cargamos 16 bytes de entrada 10 bytes de caracteres  + 6 bytes basura
+    ;cargamos 16 bytes de entrada 10 bytes de caracteres  + 6 bytes basura
     movdqu xmm0, [rsi + r8]
 
     ;Restar '0' a cada byte
