@@ -20,7 +20,7 @@ global ej_4_hecho
 ej_1_hecho: db TRUE
 ej_2_hecho: db TRUE
 ej_3_hecho: db TRUE
-ej_4_hecho: db FALSE
+ej_4_hecho: db TRUE
 
 ALIGN 16
 espacios:
@@ -29,6 +29,13 @@ espacios:
 ceros:
 	times 10 db '0'
 	times 6  db 0x0
+mask_10:
+	times 10 db 0xFF
+	times 6  db 0x00
+mult_10:
+	db 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 0, 0, 0, 0, 0, 0
+mult_100:
+	dw 100, 1, 100, 1, 1, 0, 0, 0
 const_dos: dd 2.0
 
 section .text
@@ -62,14 +69,14 @@ ej1_sample:
     push r15
 
     ; Recuperar argumentos de la pila
-    mov r10, [rbp + 16]   ; freq_b
-    mov r11, [rbp + 24]   ; b_start
+    mov r10, [rbp + 16] ; freq_b
+    mov r11, [rbp + 24] ; b_start
 
     ; Preservar longitudes en registros seguros para no pisarlos con la división
-    mov r13, rdx          ; r13 = freq_a_len
-    mov r14, r9           ; r14 = freq_b_len
+    mov r13, rdx ; r13 = freq_a_len
+    mov r14, r9 ; r14 = freq_b_len
 
-    xor r12, r12          ; r12 = i (contador / índice actual del buffer)
+    xor r12, r12 ; r12 = i (contador / índice actual del buffer)
 
 .loop:
     cmp r12, rdi
@@ -77,31 +84,31 @@ ej1_sample:
 
     ; Calcular índice circular para A: rax = (i + a_start) % freq_a_len
     mov rax, r12
-    add rax, r8           ; rax = i + a_start
-    xor rdx, rdx          ; Limpiar rdx para la división de 128-bit (rdx:rax)
-    div r13               ; rdx:rax / freq_a_len -> el resto (módulo) queda en rdx
-    mov rbx, rdx          ; rbx = índice final para freq_a
+    add rax, r8 ; rax = i + a_start
+    xor rdx, rdx ; Limpiar rdx para la división de 128-bit (rdx:rax)
+    div r13 ; rdx:rax / freq_a_len -> el resto (módulo) queda en rdx
+    mov rbx, rdx ; rbx = índice final para freq_a
 
     
-    ; Calcular índice circular para B: rax = (i + b_start) % freq_b_len
+    ; Calcular índice B    
     mov rax, r12
-    add rax, r11          ; rax = i + b_start
-    xor rdx, rdx          ; Limpiar rdx
-    div r14               ; rdx:rax / freq_b_len -> el resto queda en rdx
+    add rax, r11 ; rax = i + b_start
+    xor rdx, rdx ; Limpiar rdx
+    div r14 ; rdx:rax / freq_b_len -> el resto queda en rdx
     ; rdx ya tiene el índice final para freq_b
 
     
-    ; Carga SIMD (8 elementos de int16_t = 16 bytes por tabla)
-    lea rax, [rcx + rbx * 2]    ; Dirección base + índice * 2 bytes
-    movdqu xmm0, [rax]          ; Carga 8 valores de freq_a en xmm0
+    ; Carga 8 elementos de int16_t 
+    lea rax, [rcx + rbx * 2] ; Dirección base + índice * 2 bytes
+    movdqu xmm0, [rax] ; Carga 8 valores de freq_a en xmm0
 
-    lea rax, [r10 + rdx * 2]    ; Dirección base + índice * 2 bytes
-    movdqu xmm1, [rax]          ; Carga 8 valores de freq_b en xmm1
+    lea rax, [r10 + rdx * 2] ; Dirección base + índice * 2 bytes
+    movdqu xmm1, [rax] ; Carga 8 valores de freq_b en xmm1
 
     
     ; Operaciones SIMD
-    paddsw xmm0, xmm1     ; Suma con signo de 16 bits en paralelo (8 elementos)
-    psraw  xmm0, 1        ; Dividir por 2 (shift a rigth, mantiene signo)
+    paddsw xmm0, xmm1 ; Suma con signo de 16 bits en paralelo (8 elementos)
+    psraw  xmm0, 1 ; Dividir por 2 (shift a derecha, mantiene signo)
 
     
     ;Guardar resultado en el buffer de salida
@@ -113,7 +120,6 @@ ej1_sample:
     jmp .loop
 
 .end:
-    ; Restaurar registros en orden inverso exacto al push
     pop r15
     pop r14
     pop r13
@@ -208,25 +214,24 @@ ej3_remove_duplicates:
     push r15
     push rbx
 
-    xor r12, r12          ; r12 = índice de lectura (avanza de 16 en 16)
-    xor r15, r15          ; r15 = índice de escritura en output (arranca en 0)
+    xor r12, r12 ; r12 = índice de lectura (avanza de 16 en 16)
+    xor r15, r15 ; r15 = índice de escritura en output (arranca en 0)
 
-    mov r14b, ' '         ; r14b = señal de referencia (arranca en espacio)
+    mov r14b, ' ' ; r14b = señal de referencia (arranca en espacio)
 
 .loop:
     cmp r12, rdi
     jge .end
     
-    ; Cargar 16 bytes y salvar INMEDIATAMENTE el primer byte en r13b
+    ; Cargar 16 bytes y salvar el primer byte en r13b
     movdqu xmm0, [rsi + r12]
     movd eax, xmm0 ; EAX tiene los primeros 4 bytes, AL tiene el 1ro
     mov r13b, al ; Guardamos de forma segura el carácter del bloque
 
-    ;Preparar xmm1 para la expansión matemática
     pxor xmm1, xmm1
     movd xmm1, eax
 
-    ; Matemática de expansión a 16 bytes
+    ; Matemática!!!!!!
     punpcklbw xmm1, xmm1 
     punpcklwd xmm1, xmm1 
     punpckldq xmm1, xmm1 
@@ -248,7 +253,7 @@ ej3_remove_duplicates:
     cmp r14b, ' '
     je .siguiente_bloque  ;Si es espacio (silencio), se descarta
 
-    ;Guardar en el output de forma segura y avanzar r15 de a 1
+    ;Guardar en el output y avanzar r15 de a 1
     mov [rdx + r15], r14b
     inc r15            
 
@@ -257,8 +262,6 @@ ej3_remove_duplicates:
     jmp .loop
 
 .end:
-    mov byte [rdx + r15], 0 
-
     pop rbx
     pop r15
     pop r14
@@ -270,8 +273,74 @@ ej3_remove_duplicates:
 global ej4_get_numbers
 ; void ej4_get_numbers(size_t size, char numbers[10 * (size - 1) + 16], size_t output[size]);
 ;
-; size:   Está en ??
-; signal: Está en ??
-; output: Está en ??
+; size:   Está en rdi
+; signal: Está en rsi
+; output: Está en rdx
 ej4_get_numbers:
-	ret
+    push rbp
+    mov rbp, rsp
+    push r12 
+    push r13
+    push r14
+    push r15
+    push rbx
+
+    xor rcx, rcx ; rcx = i (número actual: 0 .. size - 1)
+    xor r8, r8 ; r8 = offset de lectura en bytes (avanza de a 10)
+
+.loop:
+    cmp rcx, rdi
+    jge .end
+
+    ; cargamos 16 bytes de entrada 10 bytes de caracteres  + 6 bytes basura
+    movdqu xmm0, [rsi + r8]
+
+    ;Restar '0' a cada byte
+    psubb xmm0, [rel ceros]
+
+    ;Detectar dónde había espacios (' ' - '0' == 0xF0)
+    movdqa xmm1, [rel espacios]
+    pcmpeqb xmm1, xmm0
+
+    ;Reemplazar espacios por 0 (donde era espacio queda 0, dígitos 0..9 se mantienen)
+    pandn xmm1, xmm0
+
+    ;Limpiar los 6 bytes sobrantes del final
+    pand xmm1, [rel mask_10]
+
+    ;Contraer adyacentes: d_par * 10 + d_impar en words de 16 bits
+    pmaddubsw xmm1, [rel mult_10]
+
+    ;Contraer en bloques de 4 dígitos: (d0..d1) * 100 + (d2..d3) en dwords de 32 bits
+    pmaddwd xmm1, [rel mult_100]
+
+    ;Combinar los 3 dwords en un uint64_t en rax
+    ;total = (dw0 * 10000 + dw1) * 100 + dw2
+    movd eax, xmm1
+    imul rax, 10000
+
+    psrldq xmm1, 4
+    movd r9d, xmm1
+    add rax, r9
+    imul rax, 100
+
+    psrldq xmm1, 4
+    movd r9d, xmm1
+    add rax, r9
+
+    ;Guardar entero de 64 bits en [rcx]
+    mov [rdx + rcx * 8], rax
+
+    inc rcx
+    add r8, 10
+    jmp .loop
+
+.end:
+    pop rbx
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    ret
+
