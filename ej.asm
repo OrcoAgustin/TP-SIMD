@@ -149,35 +149,75 @@ xorps xmm1, xmm1 ;contador imaginario
 
 xor r12, r12
 
+mov rcx, rdi
+shr rcx, 2          
+jz .loopCasoBorde
+
 .loop:
-	cmp r12, rdi
-	jge .postLoop
+    ;cargamos de a 4 int16_t de senal y convertir a float en xmm2
+    movq xmm2, [rsi + r12 * 2]
+    pmovsxwd xmm2, xmm2
+    cvtdq2ps xmm2, xmm2   ; xmm2 = [s3, s2, s1, s0]
 
-	;sigue loop, cargo en r11 el signal[i]
-	movsx r11, word [rsi + r12 * 2]
+    ;Cargamos 4 estructuras sen y cos de freq
+    lea rax, [rdx + r12 * 8]
+    movups xmm3, [rax]        ; [sin0, cos0, sin1, cos1]
+    movups xmm4, [rax + 16]   ; [sin2, cos2, sin3, cos3]
 
-	;convierto en float
-	cvtsi2ss xmm2, r11
+    ;Separamos senos y cosenos en registros independientes
+    movaps xmm5, xmm3
+    movaps xmm6, xmm3
+    shufps xmm5, xmm4, 0x88   ; xmm5 = [sin3, sin2, sin1, sin0]
+    shufps xmm6, xmm4, 0xDD   ; xmm6 = [cos3, cos2, cos1, cos0]
 
-	;calculamos freq i
-	mov rax, r12
-    shl rax, 3     ; rax = i * 8 (offset en bytes)
+    ;Multiplicación vectorial
+    movaps xmm7, xmm2
+    mulps xmm7, xmm6          ; signal * cos
+    addps xmm0, xmm7          ; Acumula en Re
+
+    movaps xmm7, xmm2
+    mulps xmm7, xmm5          ; signal * sin
+    addps xmm1, xmm7          ; Acumula en Im
+
+    add r12, 4                ; Avanzamos de 4 en 4
+    dec rcx
+    jnz .loop
+
+.loopCasoBorde:
+    cmp r12, rdi
+    jge .postLoop
+
+    ;Bucle para procesar los elementos restantes
+    movsx r11, word [rsi + r12 * 2]
+    cvtsi2ss xmm2, r11
+
+    mov rax, r12
+    shl rax, 3
     add rax, rdx
 
-	;parte real
-	movss xmm3, [rax + 4]     ; Carga freq[i].cos (offset +4 dentro del struct)
-    mulss xmm3, xmm2          ; xmm3 = signal[i] * cos[i]
+    movss xmm3, [rax + 4]; cos
+    mulss xmm3, xmm2
     addss xmm0, xmm3
 
-	;parte imaginaria
-	movss xmm4, [rax]    ; Carga freq[i].cos (offset +4 dentro del struct)
-    mulss xmm4, xmm2     ; xmm3 = signal[i] * cos[i]
+    movss xmm4, [rax]; sin
+    mulss xmm4, xmm2
     addss xmm1, xmm4
 
-	inc r12
-	jmp .loop
+    inc r12
+    jmp .loopCasoBorde
 
 .postLoop:
+    ; Reducción horizontal de los acumuladores vectoriales xmm0 y xmm1
+    movhlps xmm2, xmm0
+    addps xmm0, xmm2
+    movshdup xmm2, xmm0
+    addss xmm0, xmm2
+
+    movhlps xmm2, xmm1
+    addps xmm1, xmm2
+    movshdup xmm2, xmm1
+    addss xmm1, xmm2
+
 	;ahora la formula 
 	mulss xmm0, xmm0 ; xmm0 = Re^2
     mulss xmm1, xmm1 ; xmm1 = Im^2
@@ -232,14 +272,12 @@ ej3_remove_duplicates:
     pxor xmm1, xmm1
     movd xmm1, eax
 
-    ; Matemática!!!!!!
-    punpcklbw xmm1, xmm1 
-    punpcklwd xmm1, xmm1 
-    punpckldq xmm1, xmm1 
-    punpcklqdq xmm1, xmm1 
+    pxor xmm1, xmm1 ; xmm1 en ceros (selecciona siempre el byte 0)
+    movaps xmm2, xmm0 ; Copiamos el bloque cargado
+    pshufb xmm2, xmm1 ;Duplica el primer byte en todo el registro en 1 sola instrucción
 
     ; Comparar bloque real con copias
-    pcmpeqb xmm0, xmm1
+    pcmpeqb xmm0, xmm2
     
     pmovmskb eax, xmm0     
     cmp eax, 0xFFFF        
@@ -289,6 +327,13 @@ ej4_get_numbers:
     xor rcx, rcx ;contador 
     xor r8, r8 ; r8 es offset de lectura en bytes (avanza de a 10)
 
+    ;cargar mascaras
+    movdqa xmm2, [rel ceros]
+    movdqa xmm3, [rel espacios]
+    movdqa xmm4, [rel mask_10]
+    movdqa xmm5, [rel mult_10]
+    movdqa xmm6, [rel mult_100]
+
 .loop:
     cmp rcx, rdi
     jge .end
@@ -297,23 +342,23 @@ ej4_get_numbers:
     movdqu xmm0, [rsi + r8]
 
     ;Restar '0' a cada byte
-    psubb xmm0, [rel ceros]
+    psubb xmm0, xmm2
 
     ;Detectar dónde había espacios (' ' - '0' == 0xF0)
-    movdqa xmm1, [rel espacios]
+    movdqa xmm1, xmm3
     pcmpeqb xmm1, xmm0
 
     ;Reemplazar espacios por 0 (donde era espacio queda 0, dígitos 0..9 se mantienen)
     pandn xmm1, xmm0
 
     ;Limpiar los 6 bytes sobrantes del final
-    pand xmm1, [rel mask_10]
+    pand xmm1, xmm4
 
     ;Contraer adyacentes: d_par * 10 + d_impar en words de 16 bits
-    pmaddubsw xmm1, [rel mult_10]
+    pmaddubsw xmm1, xmm5
 
     ;Contraer en bloques de 4 dígitos: (d0..d1) * 100 + (d2..d3) en dwords de 32 bits
-    pmaddwd xmm1, [rel mult_100]
+    pmaddwd xmm1, xmm6
 
     ;Combinar los 3 dwords en un uint64_t en rax
     ;total = (dw0 * 10000 + dw1) * 100 + dw2
