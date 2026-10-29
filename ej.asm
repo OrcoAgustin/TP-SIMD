@@ -106,11 +106,9 @@ ej1_sample:
     lea rax, [r10 + rdx * 2]
     movdqu xmm1, [rax] ; Carga 8 valores de freq_b en xmm1
 
-    
     ; Operaciones SIMD
     paddsw xmm0, xmm1 ; Suma con signo de 16 bits en paralelo (8 elementos)
     psraw  xmm0, 1 ; Dividir por 2 (sh rig)
-
     
     ;Guardar resultado en el buffer de salida
     lea rax, [rsi + r12 * 2]
@@ -154,32 +152,32 @@ shr rcx, 2
 jz .loopCasoBorde
 
 .loop:
-    ;cargamos de a 4 int16_t de senal y convertir a float en xmm2
+    ;cargamos de a 4 int16_t de sen y convertir a float en xmm2
     movq xmm2, [rsi + r12 * 2]
     pmovsxwd xmm2, xmm2
-    cvtdq2ps xmm2, xmm2   ; xmm2 = [s3, s2, s1, s0]
+    cvtdq2ps xmm2, xmm2 ; xmm2 = [s3, s2, s1, s0]
 
-    ;Cargamos 4 estructuras sen y cos de freq
+    ;cargamos 4 estructuras sen y cos de freq
     lea rax, [rdx + r12 * 8]
-    movups xmm3, [rax]        ; [sin0, cos0, sin1, cos1]
-    movups xmm4, [rax + 16]   ; [sin2, cos2, sin3, cos3]
+    movups xmm3, [rax] ; [sin0, cos0, sin1, cos1]
+    movups xmm4, [rax + 16];[sin2, cos2, sin3, cos3]
 
-    ;Separamos senos y cosenos en registros independientes
+    ;separamos senos y cosenos en registros independientes
     movaps xmm5, xmm3
     movaps xmm6, xmm3
-    shufps xmm5, xmm4, 0x88   ; xmm5 = [sin3, sin2, sin1, sin0]
-    shufps xmm6, xmm4, 0xDD   ; xmm6 = [cos3, cos2, cos1, cos0]
+    shufps xmm5, xmm4, 0x88; xmm5 = [sin3, sin2, sin1, sin0]
+    shufps xmm6, xmm4, 0xDD ; xmm6 = [cos3, cos2, cos1, cos0]
 
-    ;Multiplicación vectorial
+    ;multiplicación vectorial
     movaps xmm7, xmm2
-    mulps xmm7, xmm6          ; signal * cos
-    addps xmm0, xmm7          ; Acumula en Re
+    mulps xmm7, xmm6; signal * cos
+    addps xmm0, xmm7; acumula en Re
 
     movaps xmm7, xmm2
-    mulps xmm7, xmm5          ; signal * sin
-    addps xmm1, xmm7          ; Acumula en Im
+    mulps xmm7, xmm5; signal * sin
+    addps xmm1, xmm7; acumula en Im
 
-    add r12, 4                ; Avanzamos de 4 en 4
+    add r12, 4 ;avanzamos de 4 en 4
     dec rcx
     jnz .loop
 
@@ -207,7 +205,7 @@ jz .loopCasoBorde
     jmp .loopCasoBorde
 
 .postLoop:
-    ; Reducción horizontal de los acumuladores vectoriales xmm0 y xmm1
+    ;reducción horizontal de los acumuladores xmm0 y xmm1 (re,im)
     movhlps xmm2, xmm0
     addps xmm0, xmm2
     movshdup xmm2, xmm0
@@ -264,33 +262,33 @@ ej3_remove_duplicates:
     cmp r12, rdi
     jge .end
     
-    ; Cargar 16 bytes y guardar el primer byte en r13b
+    ;cargas 16 bytes y guardar el primer byte en r13b
     movdqu xmm0, [rsi + r12]
     movd eax, xmm0 ; EAX tiene los primeros 4 bytes, AL tiene el 1ro
-    mov r13b, al ; Guardamos de forma segura el carácter del bloque
+    mov r13b, al ;guardamos de forma segura el carácter del bloque
 
     pxor xmm1, xmm1
     movd xmm1, eax
 
     pxor xmm1, xmm1 ; xmm1 en ceros (selecciona siempre el byte 0)
-    movaps xmm2, xmm0 ; Copiamos el bloque cargado
-    pshufb xmm2, xmm1 ;Duplica el primer byte en todo el registro en 1 sola instrucción
+    movaps xmm2, xmm0 ; copiamos el bloque cargado
+    pshufb xmm2, xmm1 ;duplica el primer byte en todo el registro en 1 sola instrucción
 
-    ; Comparar bloque real con copias
+    ;comparamos bloque real con copias
     pcmpeqb xmm0, xmm2
     
     pmovmskb eax, xmm0     
     cmp eax, 0xFFFF        
-    jne .siguiente_bloque ; Si no es homogéneo, se descarta
+    jne .siguiente_bloque ;si no es homogéneo, se descarta
 
     ;checks a e13b
     cmp r13b, r14b
-    je .siguiente_bloque ; Si es igual al anterior, se descarta (duplicado)
+    je .siguiente_bloque ;si es igual al anterior, se descarta (duplicado)
     
-    mov r14b, r13b  ; Nueva referencia
+    mov r14b, r13b  ;nueva ref
     
     cmp r14b, ' '
-    je .siguiente_bloque  ;Si es espacio (silencio), se descarta
+    je .siguiente_bloque  ;si es espacio (silencio), se descarta
 
     ;Guardar en el output
     mov [rdx + r15], r14b
@@ -341,26 +339,26 @@ ej4_get_numbers:
     ;cargamos 16 bytes de entrada 10 bytes de caracteres  + 6 bytes basura
     movdqu xmm0, [rsi + r8]
 
-    ;Restar '0' a cada byte
+    ;restar '0' a cada byte
     psubb xmm0, xmm2
 
-    ;Detectar dónde había espacios (' ' - '0' == 0xF0)
+    ;detectamos dónde había espacios (' ' - '0' == 0xF0)
     movdqa xmm1, xmm3
     pcmpeqb xmm1, xmm0
 
-    ;Reemplazar espacios por 0 (donde era espacio queda 0, dígitos 0..9 se mantienen)
+    ;reemplaza espacios por 0 (donde era espacio queda 0, dígitos 0..9 se mantienen)
     pandn xmm1, xmm0
 
-    ;Limpiar los 6 bytes sobrantes del final
+    ;limpiamos los 6 bytes sobrantes del final
     pand xmm1, xmm4
 
-    ;Contraer adyacentes: d_par * 10 + d_impar en words de 16 bits
+    ;contraer adyacentes: d_par * 10 + d_impar en words de 16 bits
     pmaddubsw xmm1, xmm5
 
-    ;Contraer en bloques de 4 dígitos: (d0..d1) * 100 + (d2..d3) en dwords de 32 bits
+    ;contraer en bloques de 4 dígitos: (d0..d1) * 100 + (d2..d3) en dwords de 32 bits
     pmaddwd xmm1, xmm6
 
-    ;Combinar los 3 dwords en un uint64_t en rax
+    ;combinar los 3 dwords en un uint64_t en rax
     ;total = (dw0 * 10000 + dw1) * 100 + dw2
     movd eax, xmm1
     imul rax, 10000
